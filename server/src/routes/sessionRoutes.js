@@ -72,6 +72,17 @@ router.post('/', authenticate, authorize('instructor', 'admin'), async (req, res
       VALUES (?, ?, ?, ?, ?, ?, 'active')
     `).run(sessionId, sectionId, req.user.id, dateStr, startTimeStr, parseInt(lateCutoffMinutes) || 15);
 
+    // Automatically link any prepared presentation for this section to this new session
+    try {
+      const prepPres = db.prepare('SELECT id FROM session_presentations WHERE section_id = ? AND (session_id IS NULL OR session_id = "") ORDER BY created_at DESC LIMIT 1').get(sectionId);
+      if (prepPres) {
+        db.prepare('UPDATE session_presentations SET session_id = ? WHERE id = ?').run(sessionId, prepPres.id);
+      }
+      db.prepare('UPDATE session_prompts SET session_id = ? WHERE section_id = ? AND (session_id IS NULL OR session_id = "")').run(sessionId, sectionId);
+    } catch (e) {
+      console.warn('Could not auto-link prepared presentation/drafts:', e.message);
+    }
+
     // Generate initial dynamic QR token
     const tokenData = await generateSessionQRToken(sessionId, 1);
 

@@ -267,6 +267,8 @@ export function initDatabase() {
   try { db.exec("ALTER TABLE session_prompts ADD COLUMN image_url TEXT;"); } catch (e) {}
   try { db.exec("ALTER TABLE session_prompts ADD COLUMN end_time INTEGER;"); } catch (e) {}
   try { db.exec("ALTER TABLE notification_logs ADD COLUMN read_at DATETIME;"); } catch (e) {}
+  try { db.exec("ALTER TABLE session_presentations ADD COLUMN section_id TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE session_prompts ADD COLUMN section_id TEXT;"); } catch (e) {}
   // Gamification tables migration (in case DB already exists without them)
   try { db.exec(`CREATE TABLE IF NOT EXISTS student_xp (id TEXT PRIMARY KEY, student_id TEXT NOT NULL, section_id TEXT, session_id TEXT, attendance_record_id TEXT, xp_earned INTEGER NOT NULL, reason TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`); } catch (e) {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_student_xp_student ON student_xp(student_id);`); } catch (e) {}

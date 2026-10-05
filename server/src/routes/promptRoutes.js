@@ -66,11 +66,18 @@ router.get('/session/:sessionId/drafts', authenticate, (req, res) => {
   try {
     const { sessionId } = req.params;
     const presentation = db.prepare(`
-      SELECT id, filename, original_name, file_size, slide_count, created_at 
+      SELECT id, filename, original_name, file_size, slide_count, extracted_slides_json, created_at 
       FROM session_presentations 
       WHERE session_id = ? 
       ORDER BY created_at DESC LIMIT 1
     `).get(sessionId);
+
+    let slides = [];
+    if (presentation?.extracted_slides_json) {
+      try {
+        slides = JSON.parse(presentation.extracted_slides_json);
+      } catch (e) {}
+    }
 
     const draftPrompts = db.prepare(`
       SELECT * FROM session_prompts 
@@ -85,6 +92,7 @@ router.get('/session/:sessionId/drafts', authenticate, (req, res) => {
 
     res.json({
       presentation: presentation || null,
+      slides,
       drafts: formattedDrafts
     });
   } catch (error) {
@@ -92,6 +100,141 @@ router.get('/session/:sessionId/drafts', authenticate, (req, res) => {
     res.status(500).json({ error: 'Failed to fetch draft recap prompts' });
   }
 });
+
+// Upload and analyze presentation (.pptx) in advance for a section (Lecture Prep before class session)
+router.post('/section/:sectionId/presentation', authenticate, authorize('instructor'), upload.single('presentation'), (req, res) => {
+  try {
+    const { sectionId } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ error: 'No presentation file was uploaded.' });
+    }
+
+    const section = db.prepare('SELECT id FROM sections WHERE id = ? AND instructor_id = ?').get(sectionId, req.user.id);
+    if (!section) {
+      return res.status(403).json({ error: 'Invalid or unauthorized section.' });
+    }
+
+    const originalName = req.file.originalname || 'presentation.pptx';
+    let slides = [];
+    try {
+      slides = parsePptxBuffer(req.file.buffer);
+    } catch (parseErr) {
+      console.warn('PPTX parsing warning:', parseErr.message);
+      slides = [
+        { slideNumber: 1, title: originalName.replace(/\.[^/.]+$/, ''), bullets: ['Key concepts covered in today’s class presentation.'], text: 'Key concepts covered in today’s class presentation.' }
+      ];
+    }
+
+    const suggestedQuestions = generateSuggestedQuestions(slides);
+    const presId = uuidv4();
+
+    db.prepare(`
+      INSERT INTO session_presentations (id, section_id, filename, original_name, file_size, slide_count, extracted_slides_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(presId, sectionId, originalName, originalName, req.file.size, slides.length, JSON.stringify(slides));
+
+    res.json({
+      success: true,
+      presentation: {
+        id: presId,
+        filename: originalName,
+        slide_count: slides.length
+      },
+      slides,
+      suggestedQuestions
+    });
+  } catch (error) {
+    console.error('Error handling section presentation upload:', error);
+    res.status(500).json({ error: error.message || 'Failed to process presentation.' });
+  }
+});
+
+// Get lecture preparation drafts & presentation for a section
+router.get('/section/:sectionId/drafts', authenticate, (req, res) => {
+  try {
+    const { sectionId } = req.params;
+    const presentation = db.prepare(`
+      SELECT id, filename, original_name, file_size, slide_count, extracted_slides_json, created_at 
+      FROM session_presentations 
+      WHERE section_id = ? 
+      ORDER BY created_at DESC LIMIT 1
+    `).get(sectionId);
+
+    let slides = [];
+    if (presentation?.extracted_slides_json) {
+      try {
+        slides = JSON.parse(presentation.extracted_slides_json);
+      } catch (e) {}
+    }
+
+    const draftPrompts = db.prepare(`
+      SELECT * FROM session_prompts 
+      WHERE section_id = ? AND status = 'draft' 
+      ORDER BY created_at ASC
+    `).all(sectionId);
+
+    const formattedDrafts = draftPrompts.map(p => ({
+      ...p,
+      options: JSON.parse(p.options_json)
+    }));
+
+    res.json({
+      presentation: presentation || null,
+      slides,
+      drafts: formattedDrafts
+    });
+  } catch (error) {
+    console.error('Error fetching section drafts:', error);
+    res.status(500).json({ error: 'Failed to fetch section lecture drafts' });
+  }
+});
+
+// Save prepared recap questions for a section in advance
+router.post('/section/:sectionId/drafts', authenticate, authorize('instructor'), (req, res) => {
+  try {
+    const { sectionId } = req.params;
+    const { questions } = req.body;
+
+    if (!Array.isArray(questions)) {
+      return res.status(400).json({ error: 'Questions array is required.' });
+    }
+
+    const section = db.prepare('SELECT id FROM sections WHERE id = ? AND instructor_id = ?').get(sectionId, req.user.id);
+    if (!section) {
+      return res.status(403).json({ error: 'Invalid or unauthorized section.' });
+    }
+
+    // Clear existing drafts for this section
+    db.prepare("DELETE FROM session_prompts WHERE section_id = ? AND status = 'draft'").run(sectionId);
+
+    const insertPrompt = db.prepare(`
+      INSERT INTO session_prompts (id, section_id, session_id, group_id, question_text, image_url, options_json, correct_option, time_limit_seconds, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+    `);
+
+    const groupId = uuidv4().substring(0, 8);
+    questions.forEach((q) => {
+      if (!q.question_text || !q.options || !q.correct_option) return;
+      insertPrompt.run(
+        uuidv4(),
+        sectionId,
+        '',
+        groupId,
+        q.question_text,
+        q.image_url || null,
+        JSON.stringify(q.options),
+        q.correct_option,
+        parseInt(q.time_limit_seconds) || 20
+      );
+    });
+
+    res.json({ success: true, count: questions.length });
+  } catch (error) {
+    console.error('Error saving section draft prompts:', error);
+    res.status(500).json({ error: 'Failed to save section recap questions.' });
+  }
+});
+
 
 // Save prepared recap questions in advance
 router.post('/session/:sessionId/drafts', authenticate, authorize('instructor'), (req, res) => {
