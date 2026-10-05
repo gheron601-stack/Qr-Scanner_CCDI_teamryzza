@@ -65,12 +65,37 @@ router.post('/session/:sessionId/presentation', authenticate, authorize('instruc
 router.get('/session/:sessionId/drafts', authenticate, (req, res) => {
   try {
     const { sessionId } = req.params;
+
+    // 1. Fetch class session to know its section_id
+    const session = db.prepare('SELECT id, section_id FROM class_sessions WHERE id = ?').get(sessionId);
+    const sectionId = session?.section_id;
+
+    // 2. Automatically link any unlinked presentation and draft questions for this section to this session
+    if (sectionId) {
+      try {
+        db.prepare(`
+          UPDATE session_presentations 
+          SET session_id = ? 
+          WHERE section_id = ? AND (session_id IS NULL OR session_id = '')
+        `).run(sessionId, sectionId);
+
+        db.prepare(`
+          UPDATE session_prompts 
+          SET session_id = ? 
+          WHERE section_id = ? AND (session_id IS NULL OR session_id = '')
+        `).run(sessionId, sectionId);
+      } catch (linkErr) {
+        console.warn('Auto-link in drafts route warning:', linkErr.message);
+      }
+    }
+
+    // 3. Query presentation
     const presentation = db.prepare(`
       SELECT id, filename, original_name, file_size, slide_count, extracted_slides_json, created_at 
       FROM session_presentations 
-      WHERE session_id = ? 
+      WHERE session_id = ? OR (section_id = ? AND section_id IS NOT NULL AND section_id != '')
       ORDER BY created_at DESC LIMIT 1
-    `).get(sessionId);
+    `).get(sessionId, sectionId || '');
 
     let slides = [];
     if (presentation?.extracted_slides_json) {
@@ -79,11 +104,12 @@ router.get('/session/:sessionId/drafts', authenticate, (req, res) => {
       } catch (e) {}
     }
 
+    // 4. Query draft prompts
     const draftPrompts = db.prepare(`
       SELECT * FROM session_prompts 
-      WHERE session_id = ? AND status = 'draft' 
+      WHERE (session_id = ? OR (section_id = ? AND section_id IS NOT NULL AND section_id != '')) AND status = 'draft' 
       ORDER BY created_at ASC
-    `).all(sessionId);
+    `).all(sessionId, sectionId || '');
 
     const formattedDrafts = draftPrompts.map(p => ({
       ...p,
@@ -208,12 +234,16 @@ router.post('/section/:sectionId/drafts', authenticate, authorize('instructor', 
       return res.status(403).json({ error: 'Invalid or unauthorized section.' });
     }
 
-    // Clear existing drafts for this section
-    db.prepare("DELETE FROM session_prompts WHERE section_id = ? AND status = 'draft'").run(sectionId);
+    // Check if there is an active class session currently open for this section
+    const activeSession = db.prepare("SELECT id FROM class_sessions WHERE section_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1").get(sectionId);
+    const targetSessionId = activeSession ? activeSession.id : null;
+
+    // Clear existing drafts for this section (or active session)
+    db.prepare("DELETE FROM session_prompts WHERE (section_id = ? OR session_id = ?) AND status = 'draft'").run(sectionId, targetSessionId || '');
 
     const insertPrompt = db.prepare(`
-      INSERT INTO session_prompts (id, section_id, group_id, question_text, image_url, options_json, correct_option, time_limit_seconds, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+      INSERT INTO session_prompts (id, section_id, session_id, group_id, question_text, image_url, options_json, correct_option, time_limit_seconds, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
     `);
 
     const groupId = uuidv4().substring(0, 8);
@@ -223,6 +253,7 @@ router.post('/section/:sectionId/drafts', authenticate, authorize('instructor', 
       insertPrompt.run(
         uuidv4(),
         sectionId,
+        targetSessionId,
         groupId,
         q.question_text,
         q.image_url || null,

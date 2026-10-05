@@ -580,6 +580,25 @@ export const LiveSessionView = () => {
     }
   };
 
+  const handleOpenRecapModal = async () => {
+    try {
+      const draftsRes = await api.get(`/prompts/session/${sessionId}/drafts`);
+      if (draftsRes.data?.drafts?.length > 0) {
+        setPromptDeck(draftsRes.data.drafts);
+        setDraftsCount(draftsRes.data.drafts.length);
+      }
+      if (draftsRes.data?.presentation) {
+        setPresentation(draftsRes.data.presentation);
+      }
+      if (draftsRes.data?.slides?.length > 0) {
+        setPresentationSlides(draftsRes.data.slides);
+      }
+    } catch (e) {
+      console.warn('Could not refresh drafts:', e.message);
+    }
+    setShowPromptModal(true);
+  };
+
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-12 text-center text-slate-400">
@@ -721,7 +740,7 @@ export const LiveSessionView = () => {
 
           {isActive && (
             <button
-              onClick={() => setShowPromptModal(true)}
+              onClick={handleOpenRecapModal}
               className="p-2.5 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-900 text-xs font-extrabold flex items-center gap-1.5 transition-colors shadow-lg shadow-amber-900/20 relative"
             >
               <Zap className="w-4 h-4" />
@@ -971,7 +990,7 @@ export const LiveSessionView = () => {
                     <div className="flex items-center gap-2">
                       {draftsCount > 0 && (
                         <button
-                          onClick={() => setShowPromptModal(true)}
+                          onClick={handleOpenRecapModal}
                           className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-900 text-xs font-extrabold flex items-center gap-1.5 transition-colors shadow-lg shadow-amber-900/30"
                         >
                           <Zap className="w-3.5 h-3.5" />
