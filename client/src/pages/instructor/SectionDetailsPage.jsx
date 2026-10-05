@@ -26,7 +26,8 @@ import {
   FileText,
   ChevronRight,
   Tv,
-  Plus
+  Plus,
+  MonitorPlay
 } from 'lucide-react';
 
 export const SectionDetailsPage = () => {
@@ -53,6 +54,7 @@ export const SectionDetailsPage = () => {
   const [uploadingPpt, setUploadingPpt] = useState(false);
   const [pptUploadError, setPptUploadError] = useState('');
   const [savingDrafts, setSavingDrafts] = useState(false);
+  const [launchingPpt, setLaunchingPpt] = useState(false);
   const pptFileInputRef = useRef(null);
 
   // Start Session Modal State
@@ -143,6 +145,19 @@ export const SectionDetailsPage = () => {
       alert(err.response?.data?.error || 'Failed to save recap questions.');
     } finally {
       setSavingDrafts(false);
+    }
+  };
+
+  const handleLaunchPowerPoint = async () => {
+    if (!presentation?.id) return;
+    try {
+      setLaunchingPpt(true);
+      await api.post(`/prompts/presentation/${presentation.id}/launch`);
+    } catch (err) {
+      console.error('Failed to open PowerPoint:', err);
+      alert(err.response?.data?.error || 'Failed to open presentation in PowerPoint.');
+    } finally {
+      setLaunchingPpt(false);
     }
   };
 
@@ -399,7 +414,22 @@ export const SectionDetailsPage = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleLaunchPowerPoint}
+                      disabled={launchingPpt}
+                      className="px-3.5 py-2 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-500/50 text-purple-200 text-xs font-bold flex items-center gap-1.5 transition-all shadow-md"
+                      title="Open presentation directly in PowerPoint full-screen slideshow on this computer"
+                    >
+                      {launchingPpt ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-300" />
+                      ) : (
+                        <MonitorPlay className="w-3.5 h-3.5 text-purple-300" />
+                      )}
+                      <span>{launchingPpt ? 'Opening PPT...' : 'Open in PowerPoint'}</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => pptFileInputRef.current?.click()}
