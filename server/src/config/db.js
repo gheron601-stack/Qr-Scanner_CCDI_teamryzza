@@ -119,7 +119,19 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_sessions_section_status
       ON class_sessions(section_id, status);
 
-    -- ── S-Class: Active Presence (Pop Quizzes) ───────────────────────────────
+    -- ── S-Class: Active Presence (Pop Quizzes & Presentations) ──────────────
+    CREATE TABLE IF NOT EXISTS session_presentations (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      file_size INTEGER NOT NULL,
+      slide_count INTEGER DEFAULT 0,
+      extracted_slides_json TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (session_id) REFERENCES class_sessions(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS session_prompts (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,

@@ -1,10 +1,154 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import multer from 'multer';
 import db from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { broadcastSessionEvent } from '../socket/socketHandler.js';
+import { parsePptxBuffer, generateSuggestedQuestions } from '../services/pptParser.js';
 
 const router = express.Router();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+});
+
+// Upload and analyze presentation (.pptx) for a session
+router.post('/session/:sessionId/presentation', authenticate, authorize('instructor'), upload.single('presentation'), (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ error: 'No presentation file was uploaded.' });
+    }
+
+    const session = db.prepare('SELECT id FROM class_sessions WHERE id = ? AND instructor_id = ?').get(sessionId, req.user.id);
+    if (!session) {
+      return res.status(403).json({ error: 'Invalid or unauthorized session.' });
+    }
+
+    const originalName = req.file.originalname || 'presentation.pptx';
+    let slides = [];
+    try {
+      slides = parsePptxBuffer(req.file.buffer);
+    } catch (parseErr) {
+      console.warn('PPTX parsing warning:', parseErr.message);
+      // Fallback: create mock slide structure if file format varies
+      slides = [
+        { slideNumber: 1, title: originalName.replace(/\.[^/.]+$/, ''), bullets: ['Key concepts covered in today’s class presentation.'], text: 'Key concepts covered in today’s class presentation.' }
+      ];
+    }
+
+    const suggestedQuestions = generateSuggestedQuestions(slides);
+    const presId = uuidv4();
+
+    db.prepare(`
+      INSERT INTO session_presentations (id, session_id, filename, original_name, file_size, slide_count, extracted_slides_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(presId, sessionId, originalName, originalName, req.file.size, slides.length, JSON.stringify(slides));
+
+    res.json({
+      success: true,
+      presentation: {
+        id: presId,
+        filename: originalName,
+        slide_count: slides.length
+      },
+      slides,
+      suggestedQuestions
+    });
+  } catch (error) {
+    console.error('Error handling presentation upload:', error);
+    res.status(500).json({ error: error.message || 'Failed to process presentation.' });
+  }
+});
+
+// Get presentation and draft recap questions for a session
+router.get('/session/:sessionId/drafts', authenticate, (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const presentation = db.prepare(`
+      SELECT id, filename, original_name, file_size, slide_count, created_at 
+      FROM session_presentations 
+      WHERE session_id = ? 
+      ORDER BY created_at DESC LIMIT 1
+    `).get(sessionId);
+
+    const draftPrompts = db.prepare(`
+      SELECT * FROM session_prompts 
+      WHERE session_id = ? AND status = 'draft' 
+      ORDER BY created_at ASC
+    `).all(sessionId);
+
+    const formattedDrafts = draftPrompts.map(p => ({
+      ...p,
+      options: JSON.parse(p.options_json)
+    }));
+
+    res.json({
+      presentation: presentation || null,
+      drafts: formattedDrafts
+    });
+  } catch (error) {
+    console.error('Error fetching drafts:', error);
+    res.status(500).json({ error: 'Failed to fetch draft recap prompts' });
+  }
+});
+
+// Save prepared recap questions in advance
+router.post('/session/:sessionId/drafts', authenticate, authorize('instructor'), (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { questions } = req.body;
+
+    if (!Array.isArray(questions)) {
+      return res.status(400).json({ error: 'Questions array is required.' });
+    }
+
+    const session = db.prepare('SELECT id FROM class_sessions WHERE id = ? AND instructor_id = ?').get(sessionId, req.user.id);
+    if (!session) {
+      return res.status(403).json({ error: 'Invalid or unauthorized session.' });
+    }
+
+    // Clear existing drafts for this session
+    db.prepare("DELETE FROM session_prompts WHERE session_id = ? AND status = 'draft'").run(sessionId);
+
+    const insertPrompt = db.prepare(`
+      INSERT INTO session_prompts (id, session_id, group_id, question_text, image_url, options_json, correct_option, time_limit_seconds, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+    `);
+
+    const groupId = uuidv4().substring(0, 8);
+    questions.forEach((q) => {
+      if (!q.question_text || !q.options || !q.correct_option) return;
+      insertPrompt.run(
+        uuidv4(),
+        sessionId,
+        groupId,
+        q.question_text,
+        q.image_url || null,
+        JSON.stringify(q.options),
+        q.correct_option,
+        parseInt(q.time_limit_seconds) || 20
+      );
+    });
+
+    res.json({ success: true, count: questions.length });
+  } catch (error) {
+    console.error('Error saving draft prompts:', error);
+    res.status(500).json({ error: 'Failed to save recap questions in advance.' });
+  }
+});
+
+// Delete all draft recap questions
+router.delete('/session/:sessionId/drafts', authenticate, authorize('instructor'), (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    db.prepare("DELETE FROM session_prompts WHERE session_id = ? AND status = 'draft'").run(sessionId);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to clear draft prompts.' });
+  }
+});
+
 
 // Get active prompt for a session (for students joining late)
 router.get('/session/:sessionId/active', authenticate, (req, res) => {

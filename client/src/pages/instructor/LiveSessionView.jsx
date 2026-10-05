@@ -25,7 +25,11 @@ import {
   Sparkles,
   ArrowLeft,
   Zap,
-  BarChart3
+  BarChart3,
+  Presentation,
+  Upload,
+  Loader2,
+  Radio
 } from 'lucide-react';
 
 export const LiveSessionView = () => {
@@ -70,6 +74,16 @@ export const LiveSessionView = () => {
   const [activePrompt, setActivePrompt] = useState(null);
   const [promptStats, setPromptStats] = useState(null); // { answeredCount, totalPresent, distribution: {...} }
 
+  // PPT Presentation & Prepared Recap State
+  const [presentation, setPresentation] = useState(null);
+  const [draftsCount, setDraftsCount] = useState(0);
+  const [showPptModal, setShowPptModal] = useState(false);
+  const [showAdvanceRecapModal, setShowAdvanceRecapModal] = useState(false);
+  const [uploadingPpt, setUploadingPpt] = useState(false);
+  const [pptUploadError, setPptUploadError] = useState('');
+  const [savingDrafts, setSavingDrafts] = useState(false);
+  const pptFileInputRef = useRef(null);
+
   // Fullscreen container ref
   const containerRef = useRef(null);
 
@@ -85,6 +99,20 @@ export const LiveSessionView = () => {
         const tokenRes = await api.get(`/sessions/${sessionId}/rotate-token`);
         setTokenData(tokenRes.data);
         setTimeLeft(30);
+      }
+
+      // Fetch prepared drafts and presentation if any
+      try {
+        const draftsRes = await api.get(`/prompts/session/${sessionId}/drafts`);
+        if (draftsRes.data?.drafts?.length > 0) {
+          setPromptDeck(draftsRes.data.drafts);
+          setDraftsCount(draftsRes.data.drafts.length);
+        }
+        if (draftsRes.data?.presentation) {
+          setPresentation(draftsRes.data.presentation);
+        }
+      } catch (e) {
+        console.warn('Could not load drafts:', e.message);
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load class session');
@@ -398,6 +426,8 @@ export const LiveSessionView = () => {
       setPromptStats({ answeredCount: 0, totalPresent: (sessionData.stats?.present || 0) + (sessionData.stats?.late || 0) });
       setActiveDeckQueue(promptDeck.slice(1).map(q => ({ ...q, group_id: groupId })));
       setShowPromptModal(false);
+      setShowAdvanceRecapModal(false);
+      setDraftsCount(0);
       // Reset prompt deck for next time
       setPromptDeck([defaultQuestion()]);
     } catch (err) {
@@ -469,6 +499,58 @@ export const LiveSessionView = () => {
        setPromptDeck(newDeck);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handlePptFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingPpt(true);
+      setPptUploadError('');
+      const formData = new FormData();
+      formData.append('presentation', file);
+
+      const res = await api.post(`/prompts/session/${sessionId}/presentation`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      setPresentation(res.data.presentation);
+      setShowPptModal(false);
+
+      if (res.data.suggestedQuestions?.length > 0) {
+        const formatted = res.data.suggestedQuestions.map(q => ({
+          ...q,
+          id: Math.random().toString()
+        }));
+        setPromptDeck(formatted);
+      }
+
+      // Automatically open the advance recap question builder modal!
+      setShowAdvanceRecapModal(true);
+    } catch (err) {
+      console.error('PPT Upload failed', err);
+      setPptUploadError(err.response?.data?.error || 'Failed to upload presentation.');
+    } finally {
+      setUploadingPpt(false);
+      if (pptFileInputRef.current) pptFileInputRef.current.value = '';
+    }
+  };
+
+  const handleSaveDrafts = async () => {
+    try {
+      setSavingDrafts(true);
+      await api.post(`/prompts/session/${sessionId}/drafts`, { questions: promptDeck });
+      setDraftsCount(promptDeck.length);
+      setShowAdvanceRecapModal(false);
+      setShowPromptModal(false);
+      alert(`✅ ${promptDeck.length} Quick Recap question(s) saved in advance! You can launch them at the end of class.`);
+    } catch (err) {
+      console.error('Failed to save draft prompts', err);
+      alert('Failed to save recap questions.');
+    } finally {
+      setSavingDrafts(false);
+    }
   };
 
   if (loading) {
@@ -565,13 +647,35 @@ export const LiveSessionView = () => {
             <span className="hidden sm:inline">{isFullscreen ? 'Exit Fullscreen' : 'Projector View'}</span>
           </button>
 
+          {/* Connect / Upload PPT Presentation */}
+          <button
+            onClick={() => setShowPptModal(true)}
+            className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+              presentation 
+                ? 'bg-indigo-950/70 border-indigo-500/50 text-indigo-300 hover:bg-indigo-900/60'
+                : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-300'
+            }`}
+            title="Connect PowerPoint presentation & prepare Quick Recap questions"
+          >
+            <Presentation className="w-4 h-4 text-indigo-400" />
+            <span className="hidden sm:inline">
+              {presentation ? `PPT: ${presentation.filename}` : 'Connect PPT'}
+            </span>
+            <span className="sm:hidden">PPT</span>
+          </button>
+
           {isActive && (
             <button
               onClick={() => setShowPromptModal(true)}
-              className="p-2.5 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-900 text-xs font-extrabold flex items-center gap-1.5 transition-colors shadow-lg shadow-amber-900/20"
+              className="p-2.5 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-900 text-xs font-extrabold flex items-center gap-1.5 transition-colors shadow-lg shadow-amber-900/20 relative"
             >
               <Zap className="w-4 h-4" />
               <span>Quick Recap</span>
+              {draftsCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 bg-slate-950 text-amber-400 rounded-full text-[10px] font-black border border-amber-400/40">
+                  {draftsCount} Ready
+                </span>
+              )}
             </button>
           )}
 
@@ -971,6 +1075,30 @@ export const LiveSessionView = () => {
             </p>
           </div>
 
+          {/* Quick Recap Option before Closing */}
+          {draftsCount > 0 && (
+            <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-xs text-amber-200 space-y-2.5">
+              <div className="flex items-center gap-2 font-bold text-amber-300">
+                <Zap className="w-4 h-4 text-amber-400 animate-pulse" />
+                <span>Quick Recap Questions Ready ({draftsCount} Prepared)</span>
+              </div>
+              <p className="text-slate-300">
+                You have {draftsCount} prepared recap question(s) for this lesson. Would you like to run the Quick Recap with your students before closing the session?
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCloseModal(false);
+                  setShowPromptModal(true);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 flex items-center justify-center gap-2 shadow-lg shadow-amber-900/30 transition-all hover:scale-[1.01]"
+              >
+                <Zap className="w-4 h-4 text-slate-950 fill-slate-950" />
+                <span>Run Quick Recap First ({draftsCount} Questions)</span>
+              </button>
+            </div>
+          )}
+
           <div className="flex gap-2">
             <button
               type="button"
@@ -1097,13 +1225,22 @@ export const LiveSessionView = () => {
             + Add Another Question
           </button>
 
-          <div className="pt-2 flex gap-2 border-t border-slate-800">
+          <div className="pt-2 flex flex-col sm:flex-row gap-2 border-t border-slate-800">
             <button
               type="button"
               onClick={() => setShowPromptModal(false)}
-              className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-slate-400 bg-slate-800 hover:bg-slate-700"
+              className="py-2.5 px-4 rounded-xl text-xs font-semibold text-slate-400 bg-slate-800 hover:bg-slate-700"
             >
               Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveDrafts}
+              disabled={savingDrafts}
+              className="py-2.5 px-4 rounded-xl text-xs font-semibold text-blue-300 bg-blue-950/60 hover:bg-blue-900/60 border border-blue-800/60 flex items-center justify-center gap-1.5"
+            >
+              <CheckCircle2 className="w-4 h-4 text-blue-400" />
+              <span>{savingDrafts ? 'Saving...' : 'Save as Draft'}</span>
             </button>
             <button
               type="submit"
@@ -1114,6 +1251,212 @@ export const LiveSessionView = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Upload PPT Presentation Modal */}
+      <Modal
+        isOpen={showPptModal}
+        onClose={() => setShowPptModal(false)}
+        title="Connect Lesson Presentation"
+        subtitle="Upload your PowerPoint (.pptx) to auto-extract slide concepts and prepare Quick Recap questions in advance."
+      >
+        <div className="space-y-4">
+          <input
+            type="file"
+            ref={pptFileInputRef}
+            onChange={handlePptFileSelect}
+            accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            className="hidden"
+          />
+
+          <div
+            onClick={() => !uploadingPpt && pptFileInputRef.current?.click()}
+            className="p-8 border-2 border-dashed border-indigo-500/40 hover:border-indigo-400 rounded-2xl bg-indigo-950/20 hover:bg-indigo-950/40 transition-colors cursor-pointer text-center space-y-3"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-indigo-500/20 border border-indigo-500/40 mx-auto flex items-center justify-center text-indigo-400 shadow-lg shadow-indigo-950/50">
+              {uploadingPpt ? (
+                <Loader2 className="w-7 h-7 animate-spin text-indigo-400" />
+              ) : (
+                <Presentation className="w-7 h-7 text-indigo-400" />
+              )}
+            </div>
+
+            <div>
+              <p className="text-sm font-bold text-white">
+                {uploadingPpt ? 'Analyzing Presentation Slides...' : 'Click to Upload PowerPoint (.pptx)'}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                {uploadingPpt ? 'Extracting slide content & key concepts...' : 'Maximum size: 50MB. Slide titles and key concepts will be parsed automatically.'}
+              </p>
+            </div>
+          </div>
+
+          {pptUploadError && (
+            <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{pptUploadError}</span>
+            </div>
+          )}
+
+          {presentation && (
+            <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span className="font-semibold text-slate-200">{presentation.filename}</span>
+                <span className="text-slate-400">({presentation.slide_count} slides)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPptModal(false);
+                  setShowAdvanceRecapModal(true);
+                }}
+                className="text-amber-400 hover:text-amber-300 font-bold"
+              >
+                Review Prepared Recap
+              </button>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={() => setShowPptModal(false)}
+              className="py-2 px-4 rounded-xl text-xs font-semibold text-slate-400 bg-slate-800 hover:bg-slate-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Advance Recap Preparation Modal */}
+      <Modal
+        isOpen={showAdvanceRecapModal}
+        onClose={() => setShowAdvanceRecapModal(false)}
+        title="Prepare Quick Recap in Advance"
+        subtitle={`Presentation "${presentation?.filename || 'Slides'}" parsed (${presentation?.slide_count || 0} slides found).`}
+      >
+        <div className="space-y-4">
+          <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-xs text-amber-200 space-y-2">
+            <p className="font-bold flex items-center gap-1.5 text-amber-300">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              Quick Recap Questions Generated from your Slides
+            </p>
+            <p className="text-slate-300">
+              The system extracted key slide topics. Would you like to save these Quick Recap questions in advance so they are ready for the end of the lesson?
+            </p>
+          </div>
+
+          <div className="max-h-[50vh] overflow-y-auto space-y-6 pr-2">
+            {promptDeck.map((q, qIndex) => (
+              <div key={q.id || qIndex} className="p-4 rounded-xl border border-slate-700 bg-slate-900/60 space-y-3 relative">
+                {promptDeck.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setPromptDeck(promptDeck.filter((_, i) => i !== qIndex))}
+                    className="absolute top-2 right-2 text-rose-400 hover:text-rose-300"
+                  >
+                    <XCircle className="w-5 h-5" />
+                  </button>
+                )}
+                <div className="flex justify-between items-center text-amber-400 font-bold text-xs uppercase tracking-wider">
+                  Question {qIndex + 1}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Question Text</label>
+                  <input
+                    type="text"
+                    required
+                    value={q.question_text}
+                    onChange={(e) => {
+                      const newDeck = [...promptDeck];
+                      newDeck[qIndex].question_text = e.target.value;
+                      setPromptDeck(newDeck);
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {q.options.map((opt, i) => (
+                    <div key={opt.id} className="space-y-1">
+                      <label className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
+                        <input
+                          type="radio"
+                          name={`advance_correct_${q.id || qIndex}`}
+                          checked={q.correct_option === opt.id}
+                          onChange={() => {
+                            const newDeck = [...promptDeck];
+                            newDeck[qIndex].correct_option = opt.id;
+                            setPromptDeck(newDeck);
+                          }}
+                          className="text-amber-500 focus:ring-amber-500"
+                        />
+                        Option {opt.id} {q.correct_option === opt.id && <span className="text-emerald-400 font-bold">(Correct)</span>}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={opt.text}
+                        onChange={(e) => {
+                          const newDeck = [...promptDeck];
+                          newDeck[qIndex].options[i].text = e.target.value;
+                          setPromptDeck(newDeck);
+                        }}
+                        className={`w-full bg-slate-950 border ${q.correct_option === opt.id ? 'border-amber-500' : 'border-slate-700'} rounded-xl px-2.5 py-1.5 text-xs text-white`}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">Time Limit (seconds)</label>
+                  <input
+                    type="number"
+                    min="5"
+                    max="120"
+                    value={q.time_limit_seconds || 20}
+                    onChange={(e) => {
+                      const newDeck = [...promptDeck];
+                      newDeck[qIndex].time_limit_seconds = parseInt(e.target.value) || 20;
+                      setPromptDeck(newDeck);
+                    }}
+                    className="w-24 bg-slate-950 border border-slate-700 rounded-xl px-2 py-1 text-xs text-white"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setPromptDeck([...promptDeck, defaultQuestion()])}
+            className="w-full py-2 border border-dashed border-slate-700 hover:border-amber-500 rounded-xl text-xs font-bold text-slate-400 hover:text-amber-500 transition-colors"
+          >
+            + Add Another Question
+          </button>
+
+          <div className="pt-2 flex flex-col sm:flex-row gap-2 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={() => setShowAdvanceRecapModal(false)}
+              className="py-2.5 px-4 rounded-xl text-xs font-semibold text-slate-400 bg-slate-800 hover:bg-slate-700"
+            >
+              Skip / Decide Later
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveDrafts}
+              disabled={savingDrafts}
+              className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5"
+            >
+              <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+              <span>{savingDrafts ? 'Saving...' : `Save ${promptDeck.length} Recap Questions for Lesson End`}</span>
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

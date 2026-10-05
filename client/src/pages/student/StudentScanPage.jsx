@@ -17,8 +17,11 @@ import {
   ShieldCheck,
   MapPin,
   Clock,
-  BookOpen
+  BookOpen,
+  Zap,
+  Radio
 } from 'lucide-react';
+import { useSocket } from '../../context/SocketContext';
 
 // Web Audio API chime player
 function playSuccessChime() {
@@ -47,6 +50,7 @@ function playSuccessChime() {
 
 export const StudentScanPage = () => {
   const { user } = useAuth();
+  const { joinSession } = useSocket();
   const navigate = useNavigate();
 
   const [scanning, setScanning] = useState(false);
@@ -158,6 +162,9 @@ export const StudentScanPage = () => {
       });
 
       setScanResult(data);
+      if (data?.session?.id) {
+        joinSession(data.session.id);
+      }
     } catch (err) {
       const errMsg = err.response?.data?.error || 'Scan validation failed. Please try rescanning.';
       setScanError(errMsg);
@@ -360,6 +367,13 @@ export const StudentScanPage = () => {
             <p className="text-xs text-slate-300">
               Your attendance has been verified and permanently logged to the server database.
             </p>
+          </div>
+
+          {/* Real-time Classroom Presence Notice */}
+          <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-2xl flex items-center justify-center gap-2 text-xs text-indigo-200">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            <Radio className="w-4 h-4 text-indigo-400 animate-pulse" />
+            <span>Connected to Live Classroom — Stay on this screen for Quick Recap Pop Quizzes!</span>
           </div>
 
           {/* Gamification Banner */}
