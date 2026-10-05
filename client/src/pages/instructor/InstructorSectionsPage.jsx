@@ -4,7 +4,8 @@ import api from '../../api/axios';
 import { Modal, ConfirmDialog } from '../../components/common/Modal';
 import { 
   BookOpen, PlusCircle, UploadCloud, Users, MapPin, Clock, Trash2, 
-  ArrowLeft, FileText, CheckCircle2, AlertCircle, Edit, UserMinus, Search, UserPlus
+  ArrowLeft, FileText, CheckCircle2, AlertCircle, Edit, UserMinus, Search, UserPlus,
+  Presentation
 } from 'lucide-react';
 
 export const InstructorSectionsPage = () => {
@@ -267,9 +268,11 @@ export const InstructorSectionsPage = () => {
                 </div>
               </div>
               <div className="pt-4 border-t border-slate-800/80 grid grid-cols-4 gap-2">
-                <button onClick={() => openRosterModal(sec)} className="col-span-2 py-2 bg-slate-900 hover:bg-slate-800 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"><Users className="w-3.5 h-3.5"/> Manage Roster</button>
+                <Link to={`/instructor/section/${sec.id}`} className="col-span-2 py-2 bg-indigo-950/70 hover:bg-indigo-900 text-indigo-300 border border-indigo-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors">
+                  <Presentation className="w-3.5 h-3.5 text-indigo-400" /> Prepare Lecture
+                </Link>
+                <button onClick={() => openRosterModal(sec)} className="col-span-1 py-2 bg-slate-900 hover:bg-slate-800 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-1"><Users className="w-3.5 h-3.5"/></button>
                 <button onClick={() => openSectionModal(sec)} className="col-span-1 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold flex items-center justify-center"><Edit className="w-3.5 h-3.5"/></button>
-                <button onClick={() => handleDeleteSection(sec.id, sec.name)} className="col-span-1 py-2 bg-slate-900 hover:bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold flex items-center justify-center"><Trash2 className="w-3.5 h-3.5"/></button>
               </div>
             </div>
           ))}
