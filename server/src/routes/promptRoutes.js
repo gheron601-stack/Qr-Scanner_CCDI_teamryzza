@@ -5,123 +5,11 @@ import db from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { broadcastSessionEvent } from '../socket/socketHandler.js';
 import { parsePptxBuffer, generateSuggestedQuestions } from '../services/pptParser.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { spawn, execFile } from 'child_process';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PRESENTATIONS_DIR = path.resolve(__dirname, '../../uploads/presentations');
-
-// Save the raw .pptx so it can later be opened in PowerPoint
-const savePresentationFile = (presId, originalName, buffer) => {
-  try {
-    const safeName = (originalName || 'presentation.pptx').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
-    const dir = path.join(PRESENTATIONS_DIR, presId);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, safeName), buffer);
-    fs.writeFileSync(path.join(PRESENTATIONS_DIR, `${presId}.pptx`), buffer);
-  } catch (err) {
-    console.warn('Could not save presentation file:', err.message);
-  }
-};
-
-const findPresentationFile = (presId, originalName) => {
-  // 1. Check directory PRESENTATIONS_DIR/presId/
-  const dir = path.join(PRESENTATIONS_DIR, presId);
-  if (fs.existsSync(dir)) {
-    const file = fs.readdirSync(dir).find(f => /\.(pptx|ppt|ppsx)$/i.test(f));
-    if (file) return path.join(dir, file);
-  }
-
-  // 2. Check direct file PRESENTATIONS_DIR/presId.pptx
-  const directPath = path.join(PRESENTATIONS_DIR, `${presId}.pptx`);
-  if (fs.existsSync(directPath)) return directPath;
-
-  // 3. Fallback: check Downloads/Desktop for original presentation
-  if (originalName) {
-    const home = process.env.USERPROFILE || process.env.HOME || '';
-    const candidates = [
-      path.join(home, 'Downloads', originalName),
-      path.join(home, 'Desktop', originalName),
-      path.join(home, 'Documents', originalName)
-    ];
-    for (const cand of candidates) {
-      if (fs.existsSync(cand)) {
-        try {
-          fs.mkdirSync(dir, { recursive: true });
-          fs.copyFileSync(cand, path.join(dir, originalName));
-        } catch (e) {}
-        return cand;
-      }
-    }
-  }
-
-  return null;
-};
-
-// Locate POWERPNT.EXE via known paths or Windows registry
-const findPowerPointExe = () => new Promise((resolve) => {
-  if (process.platform !== 'win32') return resolve(null);
-
-  // Check common Microsoft Office installation paths
-  const commonPaths = [
-    'C:\\Program Files\\Microsoft Office\\Root\\Office16\\POWERPNT.EXE',
-    'C:\\Program Files (x86)\\Microsoft Office\\Root\\Office16\\POWERPNT.EXE',
-    'C:\\Program Files\\Microsoft Office\\Office16\\POWERPNT.EXE',
-    'C:\\Program Files (x86)\\Microsoft Office\\Office16\\POWERPNT.EXE',
-    'C:\\Program Files\\Microsoft Office\\Office15\\POWERPNT.EXE',
-    'C:\\Program Files (x86)\\Microsoft Office\\Office15\\POWERPNT.EXE'
-  ];
-
-  for (const p of commonPaths) {
-    if (fs.existsSync(p)) return resolve(p);
-  }
-
-  // Fallback to registry App Paths
-  execFile('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\powerpnt.exe', '/ve'], (err, stdout) => {
-    if (err) return resolve(null);
-    const match = stdout.match(/REG_SZ\s+(.+)/);
-    const exe = match ? match[1].trim().replace(/^"|"$/g, '') : null;
-    resolve(exe && fs.existsSync(exe) ? exe : null);
-  });
-});
 
 const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB
-});
-
-// Open the uploaded presentation in PowerPoint as a full-screen slideshow (on the computer running the server)
-router.post('/presentation/:presentationId/launch', authenticate, authorize('instructor', 'admin'), async (req, res) => {
-  try {
-    const { presentationId } = req.params;
-    const presentation = db.prepare('SELECT id, filename, original_name FROM session_presentations WHERE id = ?').get(presentationId);
-    if (!presentation) {
-      return res.status(404).json({ error: 'Presentation not found.' });
-    }
-
-    const filePath = findPresentationFile(presentationId, presentation.original_name || presentation.filename);
-    if (!filePath) {
-      return res.status(404).json({ error: 'The PowerPoint file is not stored on the server. Please re-upload the presentation.' });
-    }
-
-    const pptExe = await findPowerPointExe();
-    if (pptExe) {
-      // /S = start directly in full-screen Slide Show mode
-      spawn(pptExe, ['/S', filePath], { detached: true, stdio: 'ignore' }).unref();
-      return res.json({ success: true, mode: 'slideshow', filename: presentation.filename });
-    }
-
-    // Fallback: open with the default app for .pptx files
-    const opener = process.platform === 'win32' ? 'explorer.exe' : (process.platform === 'darwin' ? 'open' : 'xdg-open');
-    spawn(opener, [filePath], { detached: true, stdio: 'ignore' }).unref();
-    res.json({ success: true, mode: 'default-app', filename: presentation.filename });
-  } catch (error) {
-    console.error('Error launching presentation:', error);
-    res.status(500).json({ error: 'Failed to open the presentation in PowerPoint.' });
-  }
 });
 
 // Upload and analyze presentation (.pptx) for a session
@@ -151,7 +39,6 @@ router.post('/session/:sessionId/presentation', authenticate, authorize('instruc
 
     const suggestedQuestions = generateSuggestedQuestions(slides);
     const presId = uuidv4();
-    savePresentationFile(presId, originalName, req.file.buffer);
 
     db.prepare(`
       INSERT INTO session_presentations (id, session_id, filename, original_name, file_size, slide_count, extracted_slides_json)
@@ -268,7 +155,6 @@ router.post('/section/:sectionId/presentation', authenticate, authorize('instruc
 
     const suggestedQuestions = generateSuggestedQuestions(slides);
     const presId = uuidv4();
-    savePresentationFile(presId, originalName, req.file.buffer);
 
     db.prepare(`
       INSERT INTO session_presentations (id, section_id, filename, original_name, file_size, slide_count, extracted_slides_json)

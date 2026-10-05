@@ -89,8 +89,6 @@ export const LiveSessionView = () => {
   const [uploadingPpt, setUploadingPpt] = useState(false);
   const [pptUploadError, setPptUploadError] = useState('');
   const [savingDrafts, setSavingDrafts] = useState(false);
-  const [launchingPpt, setLaunchingPpt] = useState(false);
-  const [pptLaunchNotification, setPptLaunchNotification] = useState(null);
   const pptFileInputRef = useRef(null);
 
   // Fullscreen container ref
@@ -566,28 +564,6 @@ export const LiveSessionView = () => {
     }
   };
 
-  const handleLaunchPptSlideshow = async () => {
-    if (!presentation?.id) {
-      setShowPptModal(true);
-      return;
-    }
-    try {
-      setLaunchingPpt(true);
-      await api.post(`/prompts/presentation/${presentation.id}/launch`);
-      setPptLaunchNotification({
-        type: 'success',
-        message: `PowerPoint launched in Slide Show mode (${presentation.filename || 'Presentation'}). Slide show is running in full screen.`
-      });
-      setTimeout(() => setPptLaunchNotification(null), 14000);
-    } catch (err) {
-      console.error('Failed to launch PowerPoint:', err);
-      const msg = err.response?.data?.error || 'Failed to open presentation in PowerPoint. Make sure PowerPoint is installed on this PC.';
-      alert(msg);
-    } finally {
-      setLaunchingPpt(false);
-    }
-  };
-
   const handleSaveDrafts = async () => {
     try {
       setSavingDrafts(true);
@@ -717,47 +693,31 @@ export const LiveSessionView = () => {
             <span className="hidden sm:inline">{isFullscreen ? 'Exit Fullscreen' : 'Projector View'}</span>
           </button>
 
-          {/* Option to Project the PPT directly in PowerPoint Slideshow */}
-          <button
-            onClick={handleLaunchPptSlideshow}
-            disabled={launchingPpt}
-            className={`p-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
-              presentation
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 border-purple-400 text-white shadow-purple-900/40 ring-1 ring-purple-400/50'
-                : 'bg-slate-900 hover:bg-slate-800 border-purple-500/30 text-purple-300/80'
-            }`}
-            title={
-              presentation
-                ? `Launch "${presentation.filename}" directly in Microsoft PowerPoint full-screen slideshow`
-                : "Connect a PowerPoint presentation to project slides"
-            }
-          >
-            {launchingPpt ? (
-              <Loader2 className="w-4 h-4 text-purple-200 animate-spin" />
-            ) : (
-              <MonitorPlay className="w-4 h-4 text-purple-200" />
-            )}
-            <span>{launchingPpt ? 'Opening PPT...' : 'Project PPT'}</span>
-            {presentation && (
-              <span className="px-1.5 py-0.5 rounded-md bg-purple-950 text-purple-200 text-[10px] font-mono border border-purple-400/40">
-                PowerPoint
-              </span>
-            )}
-          </button>
-
-          {/* Web Slide Preview Toggle (if extracted slides exist) */}
-          {presentationSlides.length > 0 && (
+          {/* Option to Project the PPT on Projector Screen */}
+          {presentationSlides.length > 0 ? (
             <button
               onClick={() => setIsSlideProjectorActive(!isSlideProjectorActive)}
-              className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+              className={`p-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
                 isSlideProjectorActive
-                  ? 'bg-purple-950 border-purple-500/80 text-purple-200'
-                  : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-400'
+                  ? 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-white shadow-purple-900/40 ring-2 ring-purple-400/50'
+                  : 'bg-gradient-to-r from-purple-950/90 to-indigo-950/90 hover:from-purple-900 hover:to-indigo-900 border-purple-500/50 text-purple-300'
               }`}
-              title={isSlideProjectorActive ? "Exit web slide preview and return to large QR view" : "Preview extracted slide text in browser"}
+              title={isSlideProjectorActive ? "Exit PPT Projection and return to large QR view" : "Project PPT Slides on classroom projector screen"}
             >
-              <Tv className="w-4 h-4 text-purple-400" />
-              <span className="hidden xl:inline">{isSlideProjectorActive ? 'Exit Preview' : 'Slide Preview'}</span>
+              <MonitorPlay className="w-4 h-4 text-purple-300" />
+              <span>{isSlideProjectorActive ? 'Exit PPT Projection' : 'Project PPT'}</span>
+              <span className="px-1.5 py-0.5 rounded-md bg-purple-950 text-purple-200 text-[10px] font-mono border border-purple-500/30">
+                {currentSlideIndex + 1}/{presentationSlides.length}
+              </span>
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowPptModal(true)}
+              className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-purple-500/30 text-purple-300/80 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              title="Upload or connect a PowerPoint presentation to project slides"
+            >
+              <MonitorPlay className="w-4 h-4 text-purple-400/70" />
+              <span className="hidden sm:inline">Project PPT</span>
             </button>
           )}
 
@@ -812,46 +772,6 @@ export const LiveSessionView = () => {
           )}
         </div>
       </div>
-
-      {/* PowerPoint Slide Show Active Notification Banner */}
-      {pptLaunchNotification && (
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/90 via-indigo-950/80 to-slate-900 border border-purple-500/50 flex items-center justify-between gap-4 shadow-xl animate-in fade-in duration-300">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0">
-              <MonitorPlay className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-sm font-bold text-white">PowerPoint Slideshow Running in Full-Screen</h4>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-500/40">
-                  ON SCREEN
-                </span>
-              </div>
-              <p className="text-xs text-purple-200/80 mt-0.5 truncate">
-                {pptLaunchNotification.message} Press <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-[10px] text-white">Alt+Tab</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-[10px] text-white">Esc</kbd> anytime to return to this attendance session.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={handleLaunchPptSlideshow}
-              disabled={launchingPpt}
-              className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow"
-              title="Restart or re-launch PowerPoint slideshow"
-            >
-              {launchingPpt ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
-              <span>Re-launch</span>
-            </button>
-            <button
-              onClick={() => setPptLaunchNotification(null)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              title="Dismiss notification"
-            >
-              <XCircle className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Main Grid: Projector QR Centerpiece OR Slide Projector + Live Activity HUD */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -951,16 +871,6 @@ export const LiveSessionView = () => {
 
                 {/* Slide Nav Controls */}
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleLaunchPptSlideshow}
-                    disabled={launchingPpt}
-                    className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1 transition-colors shadow-md"
-                    title="Launch presentation directly in PowerPoint full-screen slideshow"
-                  >
-                    {launchingPpt ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MonitorPlay className="w-3.5 h-3.5" />}
-                    <span>{launchingPpt ? 'Launching...' : 'Open in PowerPoint'}</span>
-                  </button>
-
                   <button
                     onClick={() => setCurrentSlideIndex(prev => Math.max(0, prev - 1))}
                     disabled={currentSlideIndex === 0}
@@ -1611,37 +1521,22 @@ export const LiveSessionView = () => {
           )}
 
           {presentation && (
-            <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between text-xs gap-2 flex-wrap">
+            <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span className="font-semibold text-slate-200 truncate max-w-[200px]">{presentation.filename}</span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span className="font-semibold text-slate-200">{presentation.filename}</span>
                 <span className="text-slate-400">({presentation.slide_count} slides)</span>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPptModal(false);
-                    handleLaunchPptSlideshow();
-                  }}
-                  disabled={launchingPpt}
-                  className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold flex items-center gap-1 transition-colors shadow"
-                  title="Launch presentation directly in Microsoft PowerPoint slideshow"
-                >
-                  <MonitorPlay className="w-3.5 h-3.5" />
-                  <span>Open in PowerPoint</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPptModal(false);
-                    setShowAdvanceRecapModal(true);
-                  }}
-                  className="text-amber-400 hover:text-amber-300 font-bold px-2 py-1"
-                >
-                  Review Prepared Recap
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPptModal(false);
+                  setShowAdvanceRecapModal(true);
+                }}
+                className="text-amber-400 hover:text-amber-300 font-bold"
+              >
+                Review Prepared Recap
+              </button>
             </div>
           )}
 
