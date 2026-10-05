@@ -5,11 +5,50 @@ import db from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { broadcastSessionEvent } from '../socket/socketHandler.js';
 import { parsePptxBuffer, generateSuggestedQuestions } from '../services/pptParser.js';
+import { spawn, exec } from 'child_process';
+import fs from 'fs';
 
 const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+});
+
+// Launch Microsoft PowerPoint application on the host machine so the instructor can choose any topic/presentation
+router.post('/launch-powerpoint', authenticate, authorize('instructor', 'admin'), (req, res) => {
+  try {
+    if (process.platform === 'win32') {
+      const commonPaths = [
+        'C:\\Program Files\\Microsoft Office\\Root\\Office16\\POWERPNT.EXE',
+        'C:\\Program Files (x86)\\Microsoft Office\\Root\\Office16\\POWERPNT.EXE',
+        'C:\\Program Files\\Microsoft Office\\Office16\\POWERPNT.EXE',
+        'C:\\Program Files (x86)\\Microsoft Office\\Office16\\POWERPNT.EXE'
+      ];
+      const foundExe = commonPaths.find(p => fs.existsSync(p));
+      if (foundExe) {
+        spawn(foundExe, [], { detached: true, stdio: 'ignore' }).unref();
+        return res.json({ success: true, message: 'Microsoft PowerPoint opened successfully.' });
+      }
+
+      // Fallback: Windows start command
+      exec('start powerpnt', (err) => {
+        if (err) {
+          console.warn('exec start powerpnt failed:', err.message);
+          return res.status(500).json({ error: 'Could not open PowerPoint. Please ensure Microsoft PowerPoint is installed on this PC.' });
+        }
+        res.json({ success: true, message: 'Microsoft PowerPoint opened successfully.' });
+      });
+    } else if (process.platform === 'darwin') {
+      exec('open -a "Microsoft PowerPoint"', () => {});
+      res.json({ success: true, message: 'Microsoft PowerPoint opened.' });
+    } else {
+      exec('libreoffice --impress', () => {});
+      res.json({ success: true });
+    }
+  } catch (err) {
+    console.error('Error opening PowerPoint:', err);
+    res.status(500).json({ error: 'Failed to open PowerPoint application.' });
+  }
 });
 
 // Upload and analyze presentation (.pptx) for a session

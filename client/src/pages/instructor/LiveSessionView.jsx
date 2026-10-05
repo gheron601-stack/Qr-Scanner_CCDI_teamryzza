@@ -89,6 +89,8 @@ export const LiveSessionView = () => {
   const [uploadingPpt, setUploadingPpt] = useState(false);
   const [pptUploadError, setPptUploadError] = useState('');
   const [savingDrafts, setSavingDrafts] = useState(false);
+  const [openingPowerPoint, setOpeningPowerPoint] = useState(false);
+  const [powerPointActiveBanner, setPowerPointActiveBanner] = useState(false);
   const pptFileInputRef = useRef(null);
 
   // Fullscreen container ref
@@ -564,6 +566,24 @@ export const LiveSessionView = () => {
     }
   };
 
+  const handleOpenPowerPoint = async () => {
+    try {
+      setOpeningPowerPoint(true);
+      await api.post('/prompts/launch-powerpoint');
+      setPowerPointActiveBanner(true);
+      setTimeout(() => setPowerPointActiveBanner(false), 14000);
+    } catch (err) {
+      console.warn('Backend launch error, attempting client protocol fallback:', err);
+      try {
+        window.location.href = 'ms-powerpoint:';
+      } catch (e) {}
+      setPowerPointActiveBanner(true);
+      setTimeout(() => setPowerPointActiveBanner(false), 14000);
+    } finally {
+      setOpeningPowerPoint(false);
+    }
+  };
+
   const handleSaveDrafts = async () => {
     try {
       setSavingDrafts(true);
@@ -693,33 +713,23 @@ export const LiveSessionView = () => {
             <span className="hidden sm:inline">{isFullscreen ? 'Exit Fullscreen' : 'Projector View'}</span>
           </button>
 
-          {/* Option to Project the PPT on Projector Screen */}
-          {presentationSlides.length > 0 ? (
-            <button
-              onClick={() => setIsSlideProjectorActive(!isSlideProjectorActive)}
-              className={`p-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
-                isSlideProjectorActive
-                  ? 'bg-purple-600 hover:bg-purple-500 border-purple-400 text-white shadow-purple-900/40 ring-2 ring-purple-400/50'
-                  : 'bg-gradient-to-r from-purple-950/90 to-indigo-950/90 hover:from-purple-900 hover:to-indigo-900 border-purple-500/50 text-purple-300'
-              }`}
-              title={isSlideProjectorActive ? "Exit PPT Projection and return to large QR view" : "Project PPT Slides on classroom projector screen"}
-            >
+          {/* Option to Open PowerPoint and Project Presentation */}
+          <button
+            onClick={handleOpenPowerPoint}
+            disabled={openingPowerPoint}
+            className="p-2.5 rounded-xl border border-purple-500/50 bg-gradient-to-r from-purple-900/90 via-indigo-900/90 to-purple-950/90 hover:from-purple-800 hover:to-indigo-800 text-purple-200 text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-purple-950/50 ring-1 ring-purple-400/30 hover:ring-purple-400/60"
+            title="Open Microsoft PowerPoint to choose and present your topic"
+          >
+            {openingPowerPoint ? (
+              <Loader2 className="w-4 h-4 text-purple-300 animate-spin" />
+            ) : (
               <MonitorPlay className="w-4 h-4 text-purple-300" />
-              <span>{isSlideProjectorActive ? 'Exit PPT Projection' : 'Project PPT'}</span>
-              <span className="px-1.5 py-0.5 rounded-md bg-purple-950 text-purple-200 text-[10px] font-mono border border-purple-500/30">
-                {currentSlideIndex + 1}/{presentationSlides.length}
-              </span>
-            </button>
-          ) : (
-            <button
-              onClick={() => setShowPptModal(true)}
-              className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-purple-500/30 text-purple-300/80 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-              title="Upload or connect a PowerPoint presentation to project slides"
-            >
-              <MonitorPlay className="w-4 h-4 text-purple-400/70" />
-              <span className="hidden sm:inline">Project PPT</span>
-            </button>
-          )}
+            )}
+            <span>{openingPowerPoint ? 'Opening PowerPoint...' : 'Project PPT'}</span>
+            <span className="px-1.5 py-0.5 rounded-md bg-purple-950 text-purple-200 text-[10px] font-mono border border-purple-400/40">
+              PowerPoint
+            </span>
+          </button>
 
           {/* Connect / Upload PPT Presentation */}
           <button
@@ -772,6 +782,46 @@ export const LiveSessionView = () => {
           )}
         </div>
       </div>
+
+      {/* PowerPoint Redirection Active Banner */}
+      {powerPointActiveBanner && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/90 via-indigo-950/80 to-slate-900 border border-purple-500/50 flex items-center justify-between gap-4 shadow-xl animate-in fade-in duration-300">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0">
+              <MonitorPlay className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm font-bold text-white">PowerPoint Opened</h4>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-500/40">
+                  READY
+                </span>
+              </div>
+              <p className="text-xs text-purple-200/80 mt-0.5 truncate">
+                Microsoft PowerPoint has opened. You can choose any presentation or topic you want to present there. (Press <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-[10px] text-white">Alt+Tab</kbd> anytime to return to this attendance session window).
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleOpenPowerPoint}
+              disabled={openingPowerPoint}
+              className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow"
+              title="Open PowerPoint again"
+            >
+              {openingPowerPoint ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
+              <span>Re-open</span>
+            </button>
+            <button
+              onClick={() => setPowerPointActiveBanner(false)}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              title="Dismiss notification"
+            >
+              <XCircle className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Grid: Projector QR Centerpiece OR Slide Projector + Live Activity HUD */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -1540,7 +1590,20 @@ export const LiveSessionView = () => {
             </div>
           )}
 
-          <div className="flex justify-end pt-2 border-t border-slate-800">
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={() => {
+                setShowPptModal(false);
+                handleOpenPowerPoint();
+              }}
+              disabled={openingPowerPoint}
+              className="py-2 px-3.5 rounded-xl text-xs font-bold text-purple-200 bg-purple-950/80 hover:bg-purple-900 border border-purple-500/50 flex items-center gap-1.5 transition-colors shadow"
+              title="Open Microsoft PowerPoint desktop application"
+            >
+              <MonitorPlay className="w-3.5 h-3.5 text-purple-300" />
+              <span>Open PowerPoint App</span>
+            </button>
             <button
               type="button"
               onClick={() => setShowPptModal(false)}

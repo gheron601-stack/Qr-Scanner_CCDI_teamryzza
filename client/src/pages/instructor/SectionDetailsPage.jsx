@@ -26,7 +26,8 @@ import {
   FileText,
   ChevronRight,
   Tv,
-  Plus
+  Plus,
+  MonitorPlay
 } from 'lucide-react';
 
 export const SectionDetailsPage = () => {
@@ -53,6 +54,7 @@ export const SectionDetailsPage = () => {
   const [uploadingPpt, setUploadingPpt] = useState(false);
   const [pptUploadError, setPptUploadError] = useState('');
   const [savingDrafts, setSavingDrafts] = useState(false);
+  const [openingPowerPoint, setOpeningPowerPoint] = useState(false);
   const pptFileInputRef = useRef(null);
 
   // Start Session Modal State
@@ -143,6 +145,20 @@ export const SectionDetailsPage = () => {
       alert(err.response?.data?.error || 'Failed to save recap questions.');
     } finally {
       setSavingDrafts(false);
+    }
+  };
+
+  const handleOpenPowerPoint = async () => {
+    try {
+      setOpeningPowerPoint(true);
+      await api.post('/prompts/launch-powerpoint');
+    } catch (err) {
+      console.warn('Failed to open PowerPoint via API, trying protocol:', err);
+      try {
+        window.location.href = 'ms-powerpoint:';
+      } catch (e) {}
+    } finally {
+      setOpeningPowerPoint(false);
     }
   };
 
@@ -369,11 +385,24 @@ export const SectionDetailsPage = () => {
                     {pptUploadError}
                   </div>
                 )}
-                <div>
+                <div className="flex items-center justify-center gap-3 flex-wrap">
                   <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/30">
                     <Upload className="w-4 h-4" />
                     <span>Select PowerPoint File (.pptx)</span>
                   </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenPowerPoint();
+                    }}
+                    disabled={openingPowerPoint}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-purple-200 bg-purple-950/80 hover:bg-purple-900 border border-purple-500/50 shadow-lg shadow-purple-950/40 transition-all"
+                    title="Open Microsoft PowerPoint application to choose or prepare your topic"
+                  >
+                    {openingPowerPoint ? <Loader2 className="w-4 h-4 animate-spin" /> : <MonitorPlay className="w-4 h-4" />}
+                    <span>Open PowerPoint App</span>
+                  </button>
                 </div>
               </div>
             ) : (
@@ -399,7 +428,22 @@ export const SectionDetailsPage = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleOpenPowerPoint}
+                      disabled={openingPowerPoint}
+                      className="px-3.5 py-2 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-500/50 text-purple-200 text-xs font-bold flex items-center gap-1.5 transition-all shadow-md"
+                      title="Open Microsoft PowerPoint to choose and present your topic"
+                    >
+                      {openingPowerPoint ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-300" />
+                      ) : (
+                        <MonitorPlay className="w-3.5 h-3.5 text-purple-300" />
+                      )}
+                      <span>{openingPowerPoint ? 'Opening...' : 'Open PowerPoint'}</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => pptFileInputRef.current?.click()}
