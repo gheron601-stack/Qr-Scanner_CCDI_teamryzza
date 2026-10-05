@@ -26,8 +26,10 @@ import {
   FileText,
   ChevronRight,
   Tv,
-  Plus
+  Plus,
+  MonitorPlay
 } from 'lucide-react';
+import { PptxViewerWrapper } from '../../components/common/PptxViewerWrapper';
 
 export const SectionDetailsPage = () => {
   const { id: sectionId } = useParams();
@@ -53,7 +55,27 @@ export const SectionDetailsPage = () => {
   const [uploadingPpt, setUploadingPpt] = useState(false);
   const [pptUploadError, setPptUploadError] = useState('');
   const [savingDrafts, setSavingDrafts] = useState(false);
+  const [pptBinaryContent, setPptBinaryContent] = useState(null);
+  const [loadingPptBinary, setLoadingPptBinary] = useState(false);
+  const [showPptPreviewModal, setShowPptPreviewModal] = useState(false);
   const pptFileInputRef = useRef(null);
+
+  const handleOpenPptPreview = async () => {
+    if (!pptBinaryContent && presentation?.id) {
+      try {
+        setLoadingPptBinary(true);
+        const res = await api.get(`/prompts/presentation/${presentation.id}/file`, { responseType: 'arraybuffer' });
+        if (res.data) {
+          setPptBinaryContent(new Uint8Array(res.data));
+        }
+      } catch (err) {
+        console.warn('Could not load PPT binary preview:', err);
+      } finally {
+        setLoadingPptBinary(false);
+      }
+    }
+    setShowPptPreviewModal(true);
+  };
 
   // Start Session Modal State
   const [showStartModal, setShowStartModal] = useState(false);
@@ -97,6 +119,14 @@ export const SectionDetailsPage = () => {
   const handlePptUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Cache local buffer immediately for instant preview
+    try {
+      const arrayBuf = await file.arrayBuffer();
+      setPptBinaryContent(new Uint8Array(arrayBuf));
+    } catch (readErr) {
+      console.warn('Could not read local file buffer:', readErr);
+    }
 
     try {
       setUploadingPpt(true);
@@ -427,12 +457,20 @@ export const SectionDetailsPage = () => {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* Column 1: Lecture Slide Outline (5 cols) */}
                 <div className="lg:col-span-5 glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800 flex-wrap gap-2">
                     <h4 className="text-sm font-bold text-white flex items-center gap-2">
                       <BookOpen className="w-4 h-4 text-indigo-400" />
                       <span>Lecture Slide Outline ({slides.length})</span>
                     </h4>
-                    <span className="text-[11px] text-slate-400">Projectable in class</span>
+                    <button
+                      type="button"
+                      onClick={handleOpenPptPreview}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+                      title="Preview authentic PowerPoint presentation slides"
+                    >
+                      <MonitorPlay className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Preview Exact Slides</span>
+                    </button>
                   </div>
 
                   <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
@@ -775,6 +813,43 @@ export const SectionDetailsPage = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Exact PowerPoint Slides Preview Modal */}
+      <Modal
+        isOpen={showPptPreviewModal}
+        onClose={() => setShowPptPreviewModal(false)}
+        title={presentation?.filename ? `Presentation: ${presentation.filename}` : 'PowerPoint Slide Preview'}
+        subtitle="Authentic in-browser lecture slides preview"
+        size="2xl"
+      >
+        <div className="space-y-4">
+          {loadingPptBinary ? (
+            <div className="flex flex-col items-center justify-center p-12 min-h-[420px] text-center space-y-3">
+              <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+              <p className="text-xs text-slate-400">Loading PowerPoint presentation file...</p>
+            </div>
+          ) : pptBinaryContent ? (
+            <PptxViewerWrapper
+              content={pptBinaryContent}
+              fileName={presentation?.filename}
+              className="w-full h-[580px]"
+            />
+          ) : (
+            <div className="text-center py-12 text-slate-400 text-sm">
+              Unable to load presentation file preview.
+            </div>
+          )}
+          <div className="flex justify-end pt-2 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={() => setShowPptPreviewModal(false)}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition-colors"
+            >
+              Close Preview
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

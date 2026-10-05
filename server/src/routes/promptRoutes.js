@@ -1,10 +1,25 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
 import db from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { broadcastSessionEvent } from '../socket/socketHandler.js';
 import { parsePptxBuffer, generateSuggestedQuestions } from '../services/pptParser.js';
+
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const getUploadsDir = () => {
+  const dir = path.resolve(__dirname, '../../uploads/presentations');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+};
 
 const router = express.Router();
 const upload = multer({
@@ -39,6 +54,13 @@ router.post('/session/:sessionId/presentation', authenticate, authorize('instruc
 
     const suggestedQuestions = generateSuggestedQuestions(slides);
     const presId = uuidv4();
+
+    try {
+      const uploadsDir = getUploadsDir();
+      fs.writeFileSync(path.join(uploadsDir, `${presId}.pptx`), req.file.buffer);
+    } catch (saveErr) {
+      console.warn('Could not save presentation file to disk:', saveErr.message);
+    }
 
     db.prepare(`
       INSERT INTO session_presentations (id, session_id, filename, original_name, file_size, slide_count, extracted_slides_json)
@@ -156,6 +178,13 @@ router.post('/section/:sectionId/presentation', authenticate, authorize('instruc
     const suggestedQuestions = generateSuggestedQuestions(slides);
     const presId = uuidv4();
 
+    try {
+      const uploadsDir = getUploadsDir();
+      fs.writeFileSync(path.join(uploadsDir, `${presId}.pptx`), req.file.buffer);
+    } catch (saveErr) {
+      console.warn('Could not save presentation file to disk:', saveErr.message);
+    }
+
     db.prepare(`
       INSERT INTO session_presentations (id, section_id, filename, original_name, file_size, slide_count, extracted_slides_json)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -174,6 +203,29 @@ router.post('/section/:sectionId/presentation', authenticate, authorize('instruc
   } catch (error) {
     console.error('Error handling section presentation upload:', error);
     res.status(500).json({ error: error.message || 'Failed to process presentation.' });
+  }
+});
+
+// Stream/download raw PPTX file for in-browser exact presentation projection
+router.get('/presentation/:presentationId/file', (req, res) => {
+  try {
+    const { presentationId } = req.params;
+    const presentation = db.prepare('SELECT id, filename, original_name FROM session_presentations WHERE id = ?').get(presentationId);
+    if (!presentation) {
+      return res.status(404).json({ error: 'Presentation not found.' });
+    }
+
+    const filePath = path.join(getUploadsDir(), `${presentationId}.pptx`);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Presentation file not found on disk.' });
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(presentation.filename)}"`);
+    res.sendFile(filePath);
+  } catch (error) {
+    console.error('Error streaming presentation file:', error);
+    res.status(500).json({ error: 'Failed to retrieve presentation file.' });
   }
 });
 
