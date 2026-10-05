@@ -122,7 +122,8 @@ export function initDatabase() {
     -- ── S-Class: Active Presence (Pop Quizzes & Presentations) ──────────────
     CREATE TABLE IF NOT EXISTS session_presentations (
       id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
+      session_id TEXT,
+      section_id TEXT,
       filename TEXT NOT NULL,
       original_name TEXT NOT NULL,
       file_size INTEGER NOT NULL,
@@ -134,7 +135,8 @@ export function initDatabase() {
 
     CREATE TABLE IF NOT EXISTS session_prompts (
       id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
+      session_id TEXT,
+      section_id TEXT,
       group_id TEXT,
       question_text TEXT NOT NULL,
       image_url TEXT,
@@ -269,6 +271,72 @@ export function initDatabase() {
   try { db.exec("ALTER TABLE notification_logs ADD COLUMN read_at DATETIME;"); } catch (e) {}
   try { db.exec("ALTER TABLE session_presentations ADD COLUMN section_id TEXT;"); } catch (e) {}
   try { db.exec("ALTER TABLE session_prompts ADD COLUMN section_id TEXT;"); } catch (e) {}
+
+  // Migrate session_presentations to ensure session_id is nullable (for pre-session lecture prep)
+  try {
+    const presInfo = db.prepare("PRAGMA table_info(session_presentations)").all();
+    const sessionCol = presInfo.find(c => c.name === 'session_id');
+    if (sessionCol && sessionCol.notnull === 1) {
+      db.exec('PRAGMA foreign_keys = OFF;');
+      db.exec(`
+        CREATE TABLE session_presentations_new (
+          id TEXT PRIMARY KEY,
+          session_id TEXT,
+          section_id TEXT,
+          filename TEXT NOT NULL,
+          original_name TEXT NOT NULL,
+          file_size INTEGER NOT NULL,
+          slide_count INTEGER DEFAULT 0,
+          extracted_slides_json TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (session_id) REFERENCES class_sessions(id) ON DELETE CASCADE
+        );
+        INSERT INTO session_presentations_new (id, session_id, section_id, filename, original_name, file_size, slide_count, extracted_slides_json, created_at)
+        SELECT id, session_id, section_id, filename, original_name, file_size, slide_count, extracted_slides_json, created_at FROM session_presentations;
+        DROP TABLE session_presentations;
+        ALTER TABLE session_presentations_new RENAME TO session_presentations;
+      `);
+      db.exec('PRAGMA foreign_keys = ON;');
+      console.log('Successfully migrated session_presentations to allow nullable session_id');
+    }
+  } catch (e) {
+    console.warn('Migration session_presentations nullable failed:', e.message);
+  }
+
+  // Migrate session_prompts to ensure session_id is nullable (for pre-session recap drafts)
+  try {
+    const promptInfo = db.prepare("PRAGMA table_info(session_prompts)").all();
+    const promptSessionCol = promptInfo.find(c => c.name === 'session_id');
+    if (promptSessionCol && promptSessionCol.notnull === 1) {
+      db.exec('PRAGMA foreign_keys = OFF;');
+      db.exec(`
+        CREATE TABLE session_prompts_new (
+          id TEXT PRIMARY KEY,
+          session_id TEXT,
+          section_id TEXT,
+          group_id TEXT,
+          question_text TEXT NOT NULL,
+          image_url TEXT,
+          options_json TEXT NOT NULL,
+          correct_option TEXT NOT NULL,
+          time_limit_seconds INTEGER DEFAULT 20,
+          status TEXT CHECK(status IN ('draft', 'active', 'completed')) DEFAULT 'draft',
+          end_time INTEGER,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (session_id) REFERENCES class_sessions(id) ON DELETE CASCADE
+        );
+        INSERT INTO session_prompts_new (id, session_id, section_id, group_id, question_text, image_url, options_json, correct_option, time_limit_seconds, status, end_time, created_at)
+        SELECT id, session_id, section_id, group_id, question_text, image_url, options_json, correct_option, time_limit_seconds, status, end_time, created_at FROM session_prompts;
+        DROP TABLE session_prompts;
+        ALTER TABLE session_prompts_new RENAME TO session_prompts;
+        CREATE INDEX IF NOT EXISTS idx_session_prompts ON session_prompts(session_id);
+      `);
+      db.exec('PRAGMA foreign_keys = ON;');
+      console.log('Successfully migrated session_prompts to allow nullable session_id');
+    }
+  } catch (e) {
+    console.warn('Migration session_prompts nullable failed:', e.message);
+  }
   // Gamification tables migration (in case DB already exists without them)
   try { db.exec(`CREATE TABLE IF NOT EXISTS student_xp (id TEXT PRIMARY KEY, student_id TEXT NOT NULL, section_id TEXT, session_id TEXT, attendance_record_id TEXT, xp_earned INTEGER NOT NULL, reason TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`); } catch (e) {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_student_xp_student ON student_xp(student_id);`); } catch (e) {}
