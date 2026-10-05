@@ -102,14 +102,16 @@ router.get('/session/:sessionId/drafts', authenticate, (req, res) => {
 });
 
 // Upload and analyze presentation (.pptx) in advance for a section (Lecture Prep before class session)
-router.post('/section/:sectionId/presentation', authenticate, authorize('instructor'), upload.single('presentation'), (req, res) => {
+router.post('/section/:sectionId/presentation', authenticate, authorize('instructor', 'admin'), upload.single('presentation'), (req, res) => {
   try {
     const { sectionId } = req.params;
     if (!req.file) {
       return res.status(400).json({ error: 'No presentation file was uploaded.' });
     }
 
-    const section = db.prepare('SELECT id FROM sections WHERE id = ? AND instructor_id = ?').get(sectionId, req.user.id);
+    const section = (req.user.role === 'admin')
+      ? db.prepare('SELECT id FROM sections WHERE id = ?').get(sectionId)
+      : db.prepare('SELECT id FROM sections WHERE id = ? AND instructor_id = ?').get(sectionId, req.user.id);
     if (!section) {
       return res.status(403).json({ error: 'Invalid or unauthorized section.' });
     }
@@ -190,7 +192,7 @@ router.get('/section/:sectionId/drafts', authenticate, (req, res) => {
 });
 
 // Save prepared recap questions for a section in advance
-router.post('/section/:sectionId/drafts', authenticate, authorize('instructor'), (req, res) => {
+router.post('/section/:sectionId/drafts', authenticate, authorize('instructor', 'admin'), (req, res) => {
   try {
     const { sectionId } = req.params;
     const { questions } = req.body;
@@ -199,7 +201,9 @@ router.post('/section/:sectionId/drafts', authenticate, authorize('instructor'),
       return res.status(400).json({ error: 'Questions array is required.' });
     }
 
-    const section = db.prepare('SELECT id FROM sections WHERE id = ? AND instructor_id = ?').get(sectionId, req.user.id);
+    const section = (req.user.role === 'admin')
+      ? db.prepare('SELECT id FROM sections WHERE id = ?').get(sectionId)
+      : db.prepare('SELECT id FROM sections WHERE id = ? AND instructor_id = ?').get(sectionId, req.user.id);
     if (!section) {
       return res.status(403).json({ error: 'Invalid or unauthorized section.' });
     }
@@ -208,17 +212,17 @@ router.post('/section/:sectionId/drafts', authenticate, authorize('instructor'),
     db.prepare("DELETE FROM session_prompts WHERE section_id = ? AND status = 'draft'").run(sectionId);
 
     const insertPrompt = db.prepare(`
-      INSERT INTO session_prompts (id, section_id, session_id, group_id, question_text, image_url, options_json, correct_option, time_limit_seconds, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+      INSERT INTO session_prompts (id, section_id, group_id, question_text, image_url, options_json, correct_option, time_limit_seconds, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft')
     `);
 
     const groupId = uuidv4().substring(0, 8);
+    let count = 0;
     questions.forEach((q) => {
       if (!q.question_text || !q.options || !q.correct_option) return;
       insertPrompt.run(
         uuidv4(),
         sectionId,
-        '',
         groupId,
         q.question_text,
         q.image_url || null,
@@ -226,12 +230,13 @@ router.post('/section/:sectionId/drafts', authenticate, authorize('instructor'),
         q.correct_option,
         parseInt(q.time_limit_seconds) || 20
       );
+      count++;
     });
 
-    res.json({ success: true, count: questions.length });
+    res.json({ success: true, count });
   } catch (error) {
     console.error('Error saving section draft prompts:', error);
-    res.status(500).json({ error: 'Failed to save section recap questions.' });
+    res.status(500).json({ error: error.message || 'Failed to save section recap questions.' });
   }
 });
 

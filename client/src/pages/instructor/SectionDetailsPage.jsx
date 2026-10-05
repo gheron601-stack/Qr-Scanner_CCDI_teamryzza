@@ -128,12 +128,19 @@ export const SectionDetailsPage = () => {
 
   const handleSaveDrafts = async () => {
     try {
+      const validQuestions = draftPrompts.filter(q => q.question_text && q.question_text.trim());
+      if (validQuestions.length === 0) {
+        alert('Please enter question text for at least one recap question before saving.');
+        return;
+      }
+
       setSavingDrafts(true);
-      await api.post(`/prompts/section/${sectionId}/drafts`, { questions: draftPrompts });
-      alert(`✅ ${draftPrompts.length} Quick Recap question(s) saved in advance! They will be automatically linked when you start the class session.`);
+      const res = await api.post(`/prompts/section/${sectionId}/drafts`, { questions: validQuestions });
+      setDraftPrompts(validQuestions);
+      alert(`✅ ${res.data.count || validQuestions.length} Quick Recap question(s) saved in advance! They will be automatically linked when you start the class session.`);
     } catch (err) {
       console.error('Failed to save recap questions', err);
-      alert('Failed to save recap questions.');
+      alert(err.response?.data?.error || 'Failed to save recap questions.');
     } finally {
       setSavingDrafts(false);
     }
