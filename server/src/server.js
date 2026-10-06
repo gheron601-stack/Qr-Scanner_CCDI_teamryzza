@@ -43,14 +43,35 @@ const PORT = process.env.PORT || 5000;
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 const allowedOrigins = CLIENT_URL.split(',').map(o => o.trim());
 
+// Origin validation allowing whitelist, Render, localhost, LAN IPs (192.168.x.x, 10.x.x.x), and local tunnels
+const isOriginAllowed = (origin) => {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  if (process.env.RENDER_EXTERNAL_URL && origin === process.env.RENDER_EXTERNAL_URL) return true;
+  if (origin.endsWith('.onrender.com')) return true;
+
+  try {
+    const url = new URL(origin);
+    const host = url.hostname;
+    // Allow localhost and loopback
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') return true;
+    // Allow private LAN subnets
+    if (host.startsWith('192.168.') || host.startsWith('10.')) return true;
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) return true;
+    // Allow localtunnel & ngrok tunnels
+    if (host.endsWith('.loca.lt') || host.endsWith('.ngrok-free.app') || host.endsWith('.ngrok.io')) return true;
+  } catch {
+    // Malformed origin
+  }
+
+  return false;
+};
+
 // Initialize Socket.io with strict CORS
 const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      if (process.env.RENDER_EXTERNAL_URL && origin === process.env.RENDER_EXTERNAL_URL) return callback(null, true);
-      if (origin.endsWith('.onrender.com')) return callback(null, true);
+      if (isOriginAllowed(origin)) return callback(null, true);
       callback(new Error(`Socket CORS blocked: ${origin}`));
     },
     methods: ['GET', 'POST']
@@ -67,19 +88,10 @@ app.use(requestIdMiddleware);
 // contentSecurityPolicy disabled to allow React SPA served from same origin
 app.use(helmet({ contentSecurityPolicy: false }));
 
-// 3. Strict CORS — whitelist from CLIENT_URL env var, plus dynamic Render URLs
+// 3. CORS — whitelist from CLIENT_URL env var, Render URLs, and LAN IPs for multi-device testing
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow server-to-server requests (no origin header)
-    if (!origin) return callback(null, true);
-    
-    // Allow explicitly whitelisted origins
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    
-    // Dynamically allow the Render deployment URL if running on Render
-    if (process.env.RENDER_EXTERNAL_URL && origin === process.env.RENDER_EXTERNAL_URL) return callback(null, true);
-    if (origin.endsWith('.onrender.com')) return callback(null, true);
-
+    if (isOriginAllowed(origin)) return callback(null, true);
     callback(new Error(`CORS blocked: ${origin}`));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
