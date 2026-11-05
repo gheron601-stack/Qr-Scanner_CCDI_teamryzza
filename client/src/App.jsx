@@ -22,6 +22,7 @@ import { ManageSectionsPage } from './pages/admin/ManageSectionsPage';
 import { ActivePromptOverlay } from './components/student/ActivePromptOverlay';
 import { BadgesPage } from './components/student/BadgesPage';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { ProfilePage } from './pages/ProfilePage';
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -166,6 +167,16 @@ export const App = () => {
             element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <ManageSectionsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Profile — all roles */}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
               </ProtectedRoute>
             }
           />

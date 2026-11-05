@@ -193,11 +193,13 @@ export const Navbar = () => {
               <span className="text-xs text-slate-400 font-mono">{user?.id_number || user?.email || ''}</span>
             </div>
 
-            <img
-              src={user?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user?.id_number || user?.email || user?.name || 'ccdi')}`}
-              alt={user?.name || 'User'}
-              className="w-9 h-9 rounded-xl border border-slate-700 bg-slate-800 object-cover"
-            />
+            <Link to="/profile" title="My Profile">
+              <img
+                src={user?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user?.id_number || user?.email || user?.name || 'ccdi')}`}
+                alt={user?.name || 'User'}
+                className="w-9 h-9 rounded-xl border border-slate-700 bg-slate-800 object-cover hover:ring-2 hover:ring-blue-500/50 hover:scale-105 transition-all"
+              />
+            </Link>
 
             <button
               onClick={handleLogout}
