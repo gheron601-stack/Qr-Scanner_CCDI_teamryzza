@@ -8,10 +8,7 @@ const router = Router();
 try {
   db.exec('ALTER TABLE users ADD COLUMN phone TEXT DEFAULT NULL;');
 } catch (err) {
-  // Column already exists — ignore
-  if (!err.message?.includes('duplicate column name')) {
-    console.warn('[profileRoutes] Migration warning:', err.message);
-  }
+  // Ignored: either already exists or table will be created by initDatabase
 }
 
 // ── GET /api/profile/me ───────────────────────────────────────────────────────

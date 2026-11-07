@@ -32,6 +32,7 @@ export function initDatabase() {
       role TEXT CHECK(role IN ('admin', 'instructor', 'student')) NOT NULL,
       department TEXT DEFAULT 'College of Information & Communications Technology',
       avatar_url TEXT,
+      phone TEXT DEFAULT NULL,
       total_xp INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );

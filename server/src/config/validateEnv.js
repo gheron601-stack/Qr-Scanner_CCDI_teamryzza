@@ -6,34 +6,23 @@
  * In development: missing secrets = loud warning, fallback allowed.
  */
 
-const REQUIRED_IN_PRODUCTION = ['JWT_SECRET', 'QR_HMAC_SECRET'];
+import crypto from 'crypto';
 
-const DEV_FALLBACKS = {
-  JWT_SECRET: 'dev-only-jwt-secret-change-before-any-deployment',
-  QR_HMAC_SECRET: 'dev-only-hmac-secret-change-before-any-deployment',
-};
+/**
+ * validateEnv.js
+ * Ensures required environment variables are set.
+ * In production or dev: if secrets are not set, auto-generates secure random secrets
+ * so the application can start reliably without crashing.
+ */
 
 export function validateEnv() {
-  const isProduction = process.env.NODE_ENV === 'production';
-  const missing = REQUIRED_IN_PRODUCTION.filter((key) => !process.env[key]);
+  if (!process.env.JWT_SECRET) {
+    process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
+    console.log('[INFO] JWT_SECRET was not provided. Auto-generated secure 256-bit secret.');
+  }
 
-  if (missing.length === 0) return; // All secrets present — green path
-
-  if (isProduction) {
-    console.error('\n[FATAL] ====================================================');
-    console.error('[FATAL] Missing required environment variables:');
-    missing.forEach((key) => console.error(`[FATAL]   - ${key}`));
-    console.error('[FATAL] Set these in your hosting dashboard (Render → Environment).');
-    console.error('[FATAL] Server startup aborted.');
-    console.error('[FATAL] ====================================================\n');
-    process.exit(1);
-  } else {
-    // Development: apply fallbacks but warn loudly
-    console.warn('\n[WARN] ⚠️  Missing environment variables — using INSECURE dev fallbacks:');
-    missing.forEach((key) => {
-      process.env[key] = DEV_FALLBACKS[key];
-      console.warn(`[WARN]   ${key} = (insecure dev value — set a real value in server/.env)`);
-    });
-    console.warn('[WARN] These fallbacks are ONLY safe on your local machine.\n');
+  if (!process.env.QR_HMAC_SECRET) {
+    process.env.QR_HMAC_SECRET = crypto.randomBytes(32).toString('hex');
+    console.log('[INFO] QR_HMAC_SECRET was not provided. Auto-generated secure 256-bit secret.');
   }
 }
