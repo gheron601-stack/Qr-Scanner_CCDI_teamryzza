@@ -116,7 +116,7 @@ seedDatabase();
 initCronJobs();
 
 // Root endpoint for API inspection
-app.get('/', (req, res) => {
+app.get('/api', (req, res) => {
   res.json({
     name: 'CCDI QRScan API & Real-time Server',
     status: 'online',
