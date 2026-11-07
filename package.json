@@ -1,9 +1,12 @@
 {
   "name": "ccdi-qrscan",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "description": "CCDI QRScan — Web-Based Dynamic QR Code Attendance System",
   "scripts": {
-    "start": "node server/src/server.js",
+    "start": "node --experimental-sqlite server/src/server.js",
     "build": "npm install --prefix server && npm install --prefix client && npm run build --prefix client",
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
