@@ -52,9 +52,6 @@ export const Navbar = () => {
                   <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-blue-400 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
                     CCDI QRScan
                   </span>
-                  <span className="text-[10px] bg-blue-500/20 text-blue-300 font-semibold px-1.5 py-0.5 rounded border border-blue-500/30">
-                    PRO
-                  </span>
                 </div>
                 <p className="text-[11px] text-slate-400 hidden sm:block">
                   Computer Communication Development Institute

@@ -157,7 +157,7 @@ export const LoginPage = () => {
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                1-Click Demo Accounts (For Evaluation)
+                Demo Accounts
               </span>
             </div>
 
